@@ -6,7 +6,7 @@ writes every part (drums, percussion, bass, keys, pads, strings, brass, woodwind
 synths, arps, guitars, and a melody line for a singer), plays them in sync with your
 transport, and keeps every version so you can try ideas and roll back.
 
-Version 0.1.0 (first MVP).
+Version 0.1.1. 0.1.1: section directions and voicing instructions (inversions, slash chords).
 
 ![Demiurge](docs/screenshot-light.png)
 
@@ -24,8 +24,11 @@ Version 0.1.0 (first MVP).
    to the cell title or the cell's right-click menu, delete the bad ones. **UNDO / REDO** covers
    everything (plans, takes, edits, captures).
 4. **Fine tuning.** Write in the cell's **Prompt** and press **VARY** to rework the current take
-   ("busier in bar 8", "simpler, leave room for the vocal"). The PART panel's *What it plays*
-   text is sent every time that part is written. The piano roll edits by hand: double-click to
+   ("busier in bar 8", "simpler, leave room for the vocal", "subtle inversions"). The PART
+   panel's *What it plays* text is sent every time that part is written. A section has its
+   own **direction** (double-click its header): "subtle inversions", "half-time feel",
+   "strings only"... applies to every part written in that section. Chords accept slash
+   chords (C/E) for exact bass notes. The piano roll edits by hand: double-click to
    add or delete a note, drag to move, drag the right edge to resize. QUANT, HUMAN and OCT -/+
    work on the current take.
 5. **Songs** are saved as presets (SAVE in the top bar) and inside your DAW project.

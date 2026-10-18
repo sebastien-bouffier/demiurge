@@ -446,8 +446,10 @@ void DemiurgeEditor::generate (const juce::String& part, const juce::String& sec
     job.kind = DemiurgeProcessor::Job::Kind::compose;
     job.target.vary = vary;
 
-    auto pt = s.partById (part.isNotEmpty() ? part : processor.selectedPart);
-    job.target.instruction = pt[ids::prompt].toString().trim();
+    // A part's prompt goes with that part. Writing a whole section sends each part's own prompt
+    // with its cell, and the section's direction is part of the song Claude sees.
+    if (part.isNotEmpty())
+        job.target.instruction = s.partById (part)[ids::prompt].toString().trim();
 
     if (part.isNotEmpty() && section.isNotEmpty())
     {
@@ -509,11 +511,13 @@ void DemiurgeEditor::editSection (const juce::String& sectionId)
     auto sec = processor.song().sectionById (sectionId);
     if (! sec.isValid())
         return;
-    auto* w = new juce::AlertWindow ("Section", "Name, length and chords (one entry per bar, bars separated by |).",
+    auto* w = new juce::AlertWindow ("Section", "Name, length, chords (one entry per bar, bars separated by |, slash chords "
+                                     "like C/E allowed) and a direction for every part in this section.",
                                      juce::MessageBoxIconType::NoIcon, this);
     w->addTextEditor ("name", sec[ids::name].toString(), "Name");
     w->addTextEditor ("bars", juce::String ((int) sec[ids::bars]), "Bars");
     w->addTextEditor ("chords", sec[ids::chords].toString(), "Chords");
+    w->addTextEditor ("prompt", sec[ids::prompt].toString(), "Direction (e.g. subtle inversions, half-time feel)");
     w->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
     w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
     juce::Component::SafePointer<DemiurgeEditor> safe (this);
@@ -529,6 +533,7 @@ void DemiurgeEditor::editSection (const juce::String& sectionId)
         target.setProperty (ids::name, w->getTextEditorContents ("name").trim(), um);
         target.setProperty (ids::bars, juce::jlimit (1, 256, w->getTextEditorContents ("bars").getIntValue()), um);
         target.setProperty (ids::chords, w->getTextEditorContents ("chords").trim(), um);
+        target.setProperty (ids::prompt, w->getTextEditorContents ("prompt").trim(), um);
     }), true);
 }
 

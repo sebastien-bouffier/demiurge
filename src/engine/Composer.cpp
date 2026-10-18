@@ -72,7 +72,13 @@ WRITING GOOD PARTS
   snare, 37 side stick, 39 clap, 42 closed hi-hat, 44 pedal hi-hat, 46 open hi-hat, 41 43 45 47 48 50 toms low to high,
   49 and 57 crash, 51 and 59 ride, 53 ride bell, 54 tambourine, 56 cowbell, 69 cabasa, 70 maracas, 75 claves,
   60 61 bongos, 62 63 64 congas. Drum note lengths are short (0.1 to 0.25).
-- Bass mostly between E1 (28) and G3 (55). Keys and pads voice-lead smoothly. Guitars use playable voicings; strums are
+- Harmony: chord symbols may be slash chords (C/E is C major over E in the bass). Unless told otherwise keys, pads,
+  strings and guitars voice-lead smoothly, choosing inversions that keep common tones and move other voices by step.
+  Follow voicing instructions precisely: "inversions", "subtle inversions" (mostly close root-position-friendly
+  voicings with first and second inversions where they smooth the line), "first inversion", "open / spread / drop-2
+  voicings", "shell voicings", "no thirds", "pedal bass", "walk the bass through the inversions" and the like.
+  An instruction about voicing changes the voicing, not the chords, unless it says so.
+- Bass mostly between E1 (28) and G3 (55). Guitars use playable voicings; strums are
   chord notes a few hundredths of a beat apart.
 - Orchestral sections are written as the section plays (for example one "strings" part holding the whole string
   voicing), with long notes, swells through velocity and correct registers.
@@ -134,7 +140,10 @@ juce::String describeSong (const Song& song)
         auto sec = song.section (i);
         s << (i + 1) << ". [" << sec[ids::id].toString() << "] " << sec[ids::name].toString() << ": "
           << (int) sec[ids::bars] << " bars = " << juce::String (song.sectionLengthBeats (sec), 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".")
-          << " beats; chords by bar: " << (sec[ids::chords].toString().isNotEmpty() ? sec[ids::chords].toString() : "(free)") << "\n";
+          << " beats; chords by bar: " << (sec[ids::chords].toString().isNotEmpty() ? sec[ids::chords].toString() : "(free)");
+        if (sec[ids::prompt].toString().trim().isNotEmpty())
+            s << "; direction for every part in this section: " << sec[ids::prompt].toString().trim();
+        s << "\n";
     }
 
     s << "\nPARTS\n";
@@ -163,7 +172,8 @@ juce::var planRequest (const Song& song, const juce::String& idea, const ModelSe
         { "scale", enumOf (scaleNames()) },
         { "timeSignature", enumOf (timeSignatures()) },
         { "style", str() },
-        { "sections", arrayOf (object ({ { "name", str() }, { "bars", integer() }, { "chords", str() } })) },
+        { "sections", arrayOf (object ({ { "name", str() }, { "bars", integer() }, { "chords", str() },
+                                         { "direction", str() } })) },
         { "parts", arrayOf (object ({ { "name", str() }, { "role", enumOf (roleNames()) },
                                       { "program", integer() }, { "description", str() } })) },
         { "comment", str() },
@@ -174,7 +184,8 @@ juce::var planRequest (const Song& song, const juce::String& idea, const ModelSe
          << "Return the song's title, tempo, key, scale and time signature, a one or two sentence style description "
             "(genre, feel, production references), the arrangement as a list of sections in playing order "
             "(name, number of bars, chords with bars separated by \" | \" and several chords in a bar separated by spaces, "
-            "for example \"Am | F | C G | E\", with exactly one entry per bar), and the parts to write "
+            "for example \"Am | F | C G | E\", with exactly one entry per bar, and a short direction for the section such as "
+            "\"stripped down, half-time feel\" or an empty string), and the parts to write "
             "(a short name, a role, a General MIDI program 0-127 as a sound hint, and a description of what the part "
             "plays and how). Cover the instruments the idea needs and no more. "
             "Put a one sentence note for the musician in comment.\n\n"
@@ -232,6 +243,7 @@ juce::String applyPlan (Song& song, const juce::var& plan, juce::String& summary
                 match.setProperty (ids::bars, juce::jlimit (1, 256, (int) s["bars"]), um);
                 match.setProperty (ids::chords, s["chords"].toString(), um);
             }
+            match.setProperty (ids::prompt, s["direction"].toString().trim(), um);
             reused.insert (match[ids::id].toString());
             order.add (match);
         }
@@ -343,7 +355,11 @@ juce::var composeRequest (const Song& song, const Target& target, const ModelSet
         auto sec = song.sectionById (c.section);
         text << "- part " << c.part << " (" << pt[ids::name].toString() << ") in section " << c.section << " ("
              << sec[ids::name].toString() << ", " << juce::String (song.sectionLengthBeats (sec), 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".")
-             << " beats)\n";
+             << " beats)";
+        const auto partPrompt = pt[ids::prompt].toString().trim();
+        if (partPrompt.isNotEmpty() && partPrompt != target.instruction.trim())
+            text << ", instructions for this part: " << partPrompt;
+        text << "\n";
     }
     text << "Put a one sentence note on what you wrote in comment.";
 

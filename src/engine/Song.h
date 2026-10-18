@@ -5,7 +5,7 @@
 //
 //   SONG { title, key, scale, bpm, tsNum, tsDen, style, idea, nextId }
 //     SECTIONS
-//       SECTION { id, name, bars, chords }        -- in arrangement order
+//       SECTION { id, name, bars, chords, prompt } -- in arrangement order; prompt = direction for the section
 //     PARTS
 //       PART { id, name, role, channel, program, mute, solo, description, prompt }
 //         CELL { section, active }                -- one per section that has takes

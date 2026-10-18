@@ -194,7 +194,7 @@ static void testComposer()
       "title": "Neon Rain", "bpm": 100, "key": "F#", "scale": "minor", "timeSignature": "4/4",
       "style": "Dark synthwave", "comment": "ok",
       "sections": [ { "name": "Intro", "bars": 4, "chords": "F#m | D | A | E" },
-                    { "name": "Verse", "bars": 16, "chords": "F#m | D | A | E" } ],
+                    { "name": "Verse", "bars": 16, "chords": "F#m | D/F# | A/E | E", "direction": "subtle inversions" } ],
       "parts": [ { "name": "Drums", "role": "drums", "program": 0, "description": "LinnDrum" },
                  { "name": "Synth Bass", "role": "bass", "program": 38, "description": "8th notes" },
                  { "name": "Vocal", "role": "melody", "program": 53, "description": "breathy" } ] })");
@@ -220,6 +220,18 @@ static void testComposer()
     const auto text = req["messages"][0]["content"].toString();
     CHECK (text.contains ("pumping eighths") && text.contains (bassId) && text.contains ("64 beats"));
     CHECK (text.contains ("0 0.25 36 100")); // the drums already written in the verse are context
+    CHECK (text.contains ("direction for every part in this section: subtle inversions"));
+    CHECK (text.contains ("D/F#"));
+    CHECK (req["system"][0]["text"].toString().contains ("subtle inversions"));
+
+    // Writing a whole section: each part's own prompt goes with its cell.
+    s.part (2).setProperty (ids::prompt, "breathy, low register", nullptr);
+    composer::Target whole;
+    for (int p = 0; p < s.numParts(); ++p)
+        whole.cells.push_back ({ s.part (p)[ids::id].toString(), verseId });
+    const auto wholeText = composer::composeRequest (s, whole, ms)["messages"][0]["content"].toString();
+    CHECK (wholeText.contains ("(Vocal) in section " + verseId) && wholeText.contains ("instructions for this part: breathy, low register"));
+    CHECK (! wholeText.contains ("Instructions:"));
 
     const auto answer = juce::JSON::parse (R"({ "comment": "done", "cells": [
         { "part": ")" + bassId + R"(", "section": ")" + verseId + R"(", "notes": "0 0.5 42 100; 0.5 0.5 42 90; 63.5 2 42 80; 70 1 42 80" },
