@@ -73,6 +73,7 @@ public:
     bool isWorking() const { return current.has_value(); }
     int jobsWaiting() const { return (int) jobs.size(); }
     juce::String currentJobLabel() const { return current ? current->label : juce::String(); }
+    int currentJobChars() const { return ai.receivedChars(); }
     double currentJobSeconds() const;
     dm::composer::ModelSettings modelSettings() const;
 

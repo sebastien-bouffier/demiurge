@@ -1,5 +1,7 @@
 #include "AiClient.h"
 
+#include "engine/Composer.h"
+
 AiClient::AiClient() : juce::Thread ("Demiurge AI")
 {
     startThread();
@@ -60,6 +62,7 @@ void AiClient::run()
 
         int status = 0;
         juce::String response;
+        received = 0;
 
         const auto url = juce::URL (endpoint()).withPOSTData (body);
         juce::String headers;
@@ -80,7 +83,21 @@ void AiClient::run()
             if (! cancelled && stream.connect (nullptr))
             {
                 status = stream.getStatusCode();
-                response = stream.readEntireStreamAsString();
+                const auto type = stream.getResponseHeaders()["Content-Type"];
+                if (status == 200 && type.containsIgnoreCase ("text/event-stream"))
+                {
+                    dm::composer::StreamAccumulator events;
+                    while (! cancelled && ! threadShouldExit() && ! stream.isExhausted())
+                    {
+                        events.addLine (stream.readNextLine().trimEnd());
+                        received = events.textLength();
+                    }
+                    response = events.message();
+                }
+                else
+                {
+                    response = stream.readEntireStreamAsString();
+                }
             }
             else if (! cancelled)
             {

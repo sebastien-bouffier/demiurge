@@ -93,6 +93,7 @@ void addCommon (Obj& body, const ModelSettings& s, const juce::var& schema, cons
 {
     body.set ("model", s.model)
         .set ("max_tokens", s.maxTokens)
+        .set ("stream", true)
         .set ("system", arr ({ Obj().set ("type", "text").set ("text", kSystem)
                                     .set ("cache_control", Obj().set ("type", "ephemeral")) }))
         .set ("messages", arr ({ Obj().set ("role", "user").set ("content", userText) }));
@@ -430,9 +431,49 @@ juce::String extractAnswer (const juce::String& responseBody, int httpStatus, ju
         return "Claude returned no answer" + (stop.isNotEmpty() ? " (" + stop + ")." : juce::String ("."));
 
     if (juce::JSON::parse (text, answer).failed() || ! answer.isObject())
-        return stop == "max_tokens" ? "The answer was too long and got cut. Ask for fewer sections or parts at once."
-                                    : "Claude's answer was not valid JSON.";
+    {
+        if (stop != "max_tokens")
+            return "Claude's answer was not valid JSON.";
+        const int used = json["usage"]["output_tokens"];
+        return "The answer hit the length limit" + (used > 0 ? " (" + juce::String (used) + " tokens)" : juce::String())
+             + " and got cut. Try Fast thinking, or ask for fewer sections or parts at once.";
+    }
     return {};
+}
+
+void StreamAccumulator::addLine (const juce::String& line)
+{
+    if (! line.startsWith ("data:"))
+        return;
+    const auto event = juce::JSON::parse (line.substring (5).trim());
+    const auto type = event["type"].toString();
+
+    if (type == "content_block_delta" && event["delta"]["type"].toString() == "text_delta")
+        text << event["delta"]["text"].toString();
+    else if (type == "message_delta")
+    {
+        if (event["delta"]["stop_reason"].isString())
+            stopReason = event["delta"]["stop_reason"].toString();
+        if (event["delta"].hasProperty ("stop_details"))
+            stopDetails = event["delta"]["stop_details"];
+        if (event["usage"].hasProperty ("output_tokens"))
+            outputTokens = event["usage"]["output_tokens"];
+    }
+    else if (type == "error")
+        error = event["error"];
+}
+
+juce::String StreamAccumulator::message() const
+{
+    if (error.isObject())
+        return juce::JSON::toString (juce::var (Obj().set ("type", "error").set ("error", error)), true);
+
+    const juce::var m = Obj().set ("type", "message")
+                             .set ("stop_reason", stopReason)
+                             .set ("stop_details", stopDetails)
+                             .set ("content", arr ({ Obj().set ("type", "text").set ("text", text) }))
+                             .set ("usage", Obj().set ("output_tokens", outputTokens));
+    return juce::JSON::toString (m, true);
 }
 
 } // namespace dm::composer

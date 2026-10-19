@@ -382,7 +382,9 @@ void DemiurgeEditor::timerCallback()
     cancelButton.setVisible (working);
     if (working)
     {
-        juce::String text = processor.currentJobLabel() + "...  " + juce::String ((int) processor.currentJobSeconds()) + " s";
+        const int chars = processor.currentJobChars();
+        juce::String text = processor.currentJobLabel() + "...  " + juce::String ((int) processor.currentJobSeconds()) + " s, "
+                          + (chars > 0 ? "writing (" + juce::String (chars) + " characters)" : juce::String ("thinking"));
         if (processor.jobsWaiting() > 0)
             text << "  (" << processor.jobsWaiting() << " more waiting)";
         statusLabel.setText (text, juce::dontSendNotification);

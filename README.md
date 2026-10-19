@@ -6,7 +6,7 @@ writes every part (drums, percussion, bass, keys, pads, strings, brass, woodwind
 synths, arps, guitars, and a melody line for a singer), plays them in sync with your
 transport, and keeps every version so you can try ideas and roll back.
 
-Version 0.1.2. 0.1.2: the CLAP install folder follows Windows' Common Files location, like the other Bidoo plugins. 0.1.1: section directions and voicing instructions (inversions, slash chords).
+Version 0.1.3. 0.1.3: answers are streamed with a larger length limit (thinking no longer cuts PLAN SONG short), and the status bar shows whether Claude is thinking or writing. 0.1.2: the CLAP install folder follows Windows' Common Files location, like the other Bidoo plugins. 0.1.1: section directions and voicing instructions (inversions, slash chords).
 
 ![Demiurge](docs/screenshot-light.png)
 

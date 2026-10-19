@@ -247,7 +247,30 @@ static void testComposer()
     CHECK (composer::extractAnswer (ok, 200, out).isEmpty() && out["comment"].toString() == "x");
     CHECK (composer::extractAnswer (R"({"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}})", 401, out).contains ("refused"));
     CHECK (composer::extractAnswer (R"({"type":"message","stop_reason":"refusal","content":[]})", 200, out).contains ("declined"));
-    CHECK (composer::extractAnswer (R"({"type":"message","stop_reason":"max_tokens","content":[{"type":"text","text":"{\"cells\":[{\"no"}]})", 200, out).contains ("too long"));
+    CHECK (composer::extractAnswer (R"({"type":"message","stop_reason":"max_tokens","content":[{"type":"text","text":"{\"cells\":[{\"no"}]})", 200, out).contains ("length limit"));
+
+    // Streamed answers
+    {
+        composer::StreamAccumulator acc;
+        for (auto* l : { "event: message_start", R"(data: {"type":"message_start","message":{"usage":{"output_tokens":1}}})",
+                         R"(data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}})",
+                         R"(data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"{\"cells\":[],"}})",
+                         "", R"(data: {"type":"ping"})",
+                         R"(data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\"comment\":\"y\"}"}})",
+                         R"(data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":42}})" })
+            acc.addLine (l);
+        CHECK (acc.isWriting() && ! acc.hasError());
+        CHECK (composer::extractAnswer (acc.message(), 200, out).isEmpty() && out["comment"].toString() == "y");
+
+        composer::StreamAccumulator cut;
+        cut.addLine (R"(data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"{\"sec"}})");
+        cut.addLine (R"(data: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":64000}})");
+        CHECK (composer::extractAnswer (cut.message(), 200, out).contains ("64000 tokens"));
+
+        composer::StreamAccumulator overloaded;
+        overloaded.addLine (R"(data: {"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}})");
+        CHECK (overloaded.hasError() && composer::extractAnswer (overloaded.message(), 200, out).contains ("Overloaded"));
+    }
 
     // Haiku: no effort, no fallbacks
     ms.model = "claude-haiku-5-5";

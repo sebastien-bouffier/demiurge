@@ -12,7 +12,9 @@ struct ModelSettings
 {
     juce::String model = "claude-opus-5-5";
     juce::String effort = "medium"; // low, medium, high
-    int maxTokens = 32000;
+    // Opus 5.5 and Sonnet 5.5 always think, and the thinking counts against this limit too.
+    // Requests are streamed (see StreamAccumulator), so a large limit doesn't time out.
+    int maxTokens = 64000;
 };
 
 // Models offered in the settings, best first: { id, label }.
@@ -57,6 +59,23 @@ juce::String parseCompose (const Song& song, const Target& target, const juce::v
 // The JSON the model wrote, out of a Messages API response body. Returns an error message
 // (API error, refusal, truncated answer) or empty on success.
 juce::String extractAnswer (const juce::String& responseBody, int httpStatus, juce::var& answer);
+
+// Rebuilds a Messages API response from its server-sent events (the requests ask for
+// "stream": true). Feed it every line of the stream, then pass message() to extractAnswer.
+class StreamAccumulator
+{
+public:
+    void addLine (const juce::String& line);
+    juce::String message() const;
+    int textLength() const { return text.length(); }
+    bool isWriting() const { return text.isNotEmpty(); }
+    bool hasError() const { return error.isObject(); }
+
+private:
+    juce::String text, stopReason;
+    juce::var stopDetails, error;
+    int outputTokens = 0;
+};
 
 // The song as the model sees it (also used in tests and for debugging).
 juce::String describeSong (const Song& song);
