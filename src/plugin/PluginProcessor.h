@@ -67,13 +67,14 @@ public:
         juce::String idea;          // plan
         dm::composer::Target target; // compose
         juce::String label;         // shown while it runs
+        int group = 0;              // jobs of one group run at the same time (a COMPOSE ALL wave)
     };
     void enqueue (const Job& job);
     void cancelJobs();
-    bool isWorking() const { return current.has_value(); }
+    bool isWorking() const;
     int jobsWaiting() const { return (int) jobs.size(); }
-    juce::String currentJobLabel() const { return current ? current->label : juce::String(); }
-    int currentJobChars() const { return ai.receivedChars(); }
+    juce::String currentJobLabel() const;
+    int currentJobChars() const;
     double currentJobSeconds() const;
     dm::composer::ModelSettings modelSettings() const;
 
@@ -106,7 +107,7 @@ private:
     void timerCallback() override;
 
     void startNextJob();
-    void jobFinished (int status, const juce::String& body);
+    void jobFinished (size_t slot, int status, const juce::String& body);
     void drainCapture (bool commit);
 
     // Playback model handover (message thread builds, audio thread plays).
@@ -137,10 +138,13 @@ private:
     std::map<int, dm::Note> captureOpen; // (channel << 8 | pitch) -> note being held
     dm::Notes captured;
 
-    AiClient ai;
+    // Up to kSlots requests at once (the parts of a COMPOSE ALL wave).
+    static constexpr size_t kSlots = 4;
+    std::array<AiClient, kSlots> ai;
+    std::array<std::optional<Job>, kSlots> running;
     std::deque<Job> jobs;
-    std::optional<Job> current;
     double jobStarted = 0.0;
+    int nextGroup = 1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DemiurgeProcessor)
 };

@@ -6,7 +6,7 @@ writes every part (drums, percussion, bass, keys, pads, strings, brass, woodwind
 synths, arps, guitars, and a melody line for a singer), plays them in sync with your
 transport, and keeps every version so you can try ideas and roll back.
 
-Version 0.1.3. 0.1.3: answers are streamed with a larger length limit (thinking no longer cuts PLAN SONG short), and the status bar shows whether Claude is thinking or writing. 0.1.2: the CLAP install folder follows Windows' Common Files location, like the other Bidoo plugins. 0.1.1: section directions and voicing instructions (inversions, slash chords).
+Version 0.1.4. 0.1.4: COMPOSE ALL writes the parts of each wave at the same time, reuses repeated sections, and retries when Claude is busy. 0.1.3: answers are streamed with a larger length limit (thinking no longer cuts PLAN SONG short), and the status bar shows whether Claude is thinking or writing. 0.1.2: the CLAP install folder follows Windows' Common Files location, like the other Bidoo plugins. 0.1.1: section directions and voicing instructions (inversions, slash chords).
 
 ![Demiurge](docs/screenshot-light.png)
 
@@ -16,8 +16,10 @@ Version 0.1.3. 0.1.3: answers are streamed with a larger length limit (thinking 
    bass, breathy vocal hook in the chorus") and press **PLAN SONG**. Claude returns the title,
    tempo, key, time signature, the arrangement (sections with their chords, one entry per bar)
    and the parts list with what each part should do.
-2. **Parts.** Press **COMPOSE ALL** to write every part for the whole song, one part after the
-   other so each new part hears the ones before it. Or work cell by cell: select a cell in
+2. **Parts.** Press **COMPOSE ALL** to write every part for the whole song, in three waves:
+   drums, percussion and bass first, then harmony and textures, then melody and leads. The parts
+   of a wave are written at the same time, and each wave hears the ones before it. Repeated
+   sections reuse their notes instead of being written again. Or work cell by cell: select a cell in
    the ARRANGEMENT grid (a part in a section) and press **GENERATE**, **WHOLE PART** (this part in
    every section) or **WHOLE SECTION** (every part in this section).
 3. **Tests and rollback.** Every generation is a new *take*: browse them with the arrows next

@@ -295,28 +295,56 @@ void DemiurgeProcessor::setStatus (const juce::String& text, bool error)
     ++statusSerial;
 }
 
+bool DemiurgeProcessor::isWorking() const
+{
+    return std::any_of (running.begin(), running.end(), [] (auto& r) { return r.has_value(); });
+}
+
+juce::String DemiurgeProcessor::currentJobLabel() const
+{
+    juce::StringArray labels;
+    for (auto& r : running)
+        if (r)
+            labels.add (r->label);
+    // "Writing Drums, Bass" rather than "Writing Drums, Writing Bass"
+    for (int i = 1; i < labels.size(); ++i)
+        if (labels[0].startsWith ("Writing ") && labels[i].startsWith ("Writing "))
+            labels.set (i, labels[i].fromFirstOccurrenceOf ("Writing ", false, false));
+    return labels.joinIntoString (", ");
+}
+
+int DemiurgeProcessor::currentJobChars() const
+{
+    int chars = 0;
+    for (size_t i = 0; i < kSlots; ++i)
+        if (running[i])
+            chars += ai[i].receivedChars();
+    return chars;
+}
+
 double DemiurgeProcessor::currentJobSeconds() const
 {
-    return current ? (juce::Time::getMillisecondCounterHiRes() - jobStarted) / 1000.0 : 0.0;
+    return isWorking() ? (juce::Time::getMillisecondCounterHiRes() - jobStarted) / 1000.0 : 0.0;
 }
 
 void DemiurgeProcessor::enqueue (const Job& job)
 {
     jobs.push_back (job);
-    if (! current)
-        startNextJob();
+    jobs.back().group = nextGroup++;
+    startNextJob();
 }
 
 void DemiurgeProcessor::cancelJobs()
 {
     jobs.clear();
-    if (current)
-        ai.cancel();
+    for (size_t i = 0; i < kSlots; ++i)
+        if (running[i])
+            ai[i].cancel();
 }
 
 void DemiurgeProcessor::startNextJob()
 {
-    if (current || jobs.empty())
+    if (jobs.empty())
         return;
 
     const auto key = settings::apiKey();
@@ -327,21 +355,31 @@ void DemiurgeProcessor::startNextJob()
         return;
     }
 
-    // COMPOSE ALL becomes one job per part, expanded now so it follows a plan queued before it.
+    // COMPOSE ALL becomes one job per part, expanded when it comes up so it follows a plan
+    // queued before it. The parts of a wave share a group and run at the same time.
     if (jobs.front().kind == Job::Kind::composeAll)
     {
+        if (isWorking())
+            return;
         jobs.pop_front();
         auto s = song();
         std::vector<Job> perPart;
-        for (int p = 0; p < s.numParts(); ++p)
+        for (int wave = 0; wave < 3; ++wave)
         {
-            Job j;
-            auto pt = s.part (p);
-            for (int i = 0; i < s.numSections(); ++i)
-                j.target.cells.push_back ({ pt[ids::id].toString(), s.section (i)[ids::id].toString() });
-            j.target.instruction = pt[ids::prompt].toString().trim();
-            j.label = "Writing " + pt[ids::name].toString() + " (" + juce::String (p + 1) + " of " + juce::String (s.numParts()) + ")";
-            perPart.push_back (j);
+            const int group = nextGroup++;
+            for (int p = 0; p < s.numParts(); ++p)
+            {
+                auto pt = s.part (p);
+                if (composer::composeWave (roleFromName (pt[ids::role].toString())) != wave)
+                    continue;
+                Job j;
+                for (int i = 0; i < s.numSections(); ++i)
+                    j.target.cells.push_back ({ pt[ids::id].toString(), s.section (i)[ids::id].toString() });
+                j.target.instruction = pt[ids::prompt].toString().trim();
+                j.label = "Writing " + pt[ids::name].toString();
+                j.group = group;
+                perPart.push_back (j);
+            }
         }
         for (auto it = perPart.rbegin(); it != perPart.rend(); ++it)
             jobs.push_front (*it);
@@ -349,42 +387,51 @@ void DemiurgeProcessor::startNextJob()
         return;
     }
 
-    current = jobs.front();
-    jobs.pop_front();
-    jobStarted = juce::Time::getMillisecondCounterHiRes();
-
-    // The request is built now, so a job sees what the jobs before it wrote.
-    const auto settingsNow = modelSettings();
-    auto s = song();
-    juce::var body;
-    if (current->kind == Job::Kind::plan)
-        body = composer::planRequest (s, current->idea, settingsNow);
-    else
+    // Start every queued job of the running group (or of the next group once nothing runs).
+    for (size_t slot = 0; slot < kSlots && ! jobs.empty(); ++slot)
     {
-        // Drop cells whose part or section disappeared meanwhile.
-        auto& cells = current->target.cells;
-        cells.erase (std::remove_if (cells.begin(), cells.end(), [&s] (const composer::Target::Cell& c)
-                                     { return ! s.partById (c.part).isValid() || ! s.sectionById (c.section).isValid(); }),
-                     cells.end());
-        if (cells.empty())
-        {
-            current.reset();
-            startNextJob();
+        if (running[slot])
+            continue;
+        const auto group = jobs.front().group;
+        const bool busyWithOtherGroup = std::any_of (running.begin(), running.end(),
+                                                     [group] (auto& r) { return r.has_value() && r->group != group; });
+        if (busyWithOtherGroup || jobs.front().kind == Job::Kind::composeAll)
             return;
-        }
-        body = composer::composeRequest (s, current->target, settingsNow);
-    }
 
-    setStatus (current->label + "...");
-    ai.send (body, key, [this] (int code, const juce::String& response) { jobFinished (code, response); });
+        auto job = jobs.front();
+        jobs.pop_front();
+        if (! isWorking())
+            jobStarted = juce::Time::getMillisecondCounterHiRes();
+
+        // The request is built now, so a job sees what the groups before it wrote.
+        const auto settingsNow = modelSettings();
+        auto s = song();
+        juce::var body;
+        if (job.kind == Job::Kind::plan)
+            body = composer::planRequest (s, job.idea, settingsNow);
+        else
+        {
+            // Drop cells whose part or section disappeared meanwhile.
+            auto& cells = job.target.cells;
+            cells.erase (std::remove_if (cells.begin(), cells.end(), [&s] (const composer::Target::Cell& c)
+                                         { return ! s.partById (c.part).isValid() || ! s.sectionById (c.section).isValid(); }),
+                         cells.end());
+            if (cells.empty())
+                continue;
+            body = composer::composeRequest (s, job.target, settingsNow);
+        }
+
+        running[slot] = job;
+        ai[slot].send (body, key, [this, slot] (int code, const juce::String& response) { jobFinished (slot, code, response); });
+    }
 }
 
-void DemiurgeProcessor::jobFinished (int httpStatus, const juce::String& body)
+void DemiurgeProcessor::jobFinished (size_t slot, int httpStatus, const juce::String& body)
 {
-    if (! current)
+    if (! running[slot])
         return;
-    const auto job = *current;
-    current.reset();
+    const auto job = *running[slot];
+    running[slot].reset();
 
     if (httpStatus == -1)
     {

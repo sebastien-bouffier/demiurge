@@ -241,6 +241,23 @@ static void testComposer()
     CHECK (result.cells.size() == 1 && result.cells[0].notes.size() == 3);
     CHECK (near (result.cells[0].notes[2].length, 0.5)); // clipped to the section end
 
+    // A repeated section points at another one instead of writing the notes again.
+    {
+        const auto otherId = s.section (0)[ids::id].toString() == verseId ? s.section (1)[ids::id].toString()
+                                                                           : s.section (0)[ids::id].toString();
+        composer::Target rep;
+        rep.cells = { { bassId, otherId }, { bassId, verseId } };
+        CHECK (composer::composeRequest (s, rep, ms)["output_config"]["format"]["schema"]["properties"]["cells"]["items"]["properties"].hasProperty ("sameAs"));
+        const auto repAnswer = juce::JSON::parse (R"({ "comment": "", "cells": [
+            { "part": ")" + bassId + R"(", "section": ")" + otherId + R"(", "sameAs": ")" + verseId + R"(", "notes": "" },
+            { "part": ")" + bassId + R"(", "section": ")" + verseId + R"(", "sameAs": "", "notes": "0 1 40 100; 1 1 43 100" } ] })");
+        composer::ComposeResult repResult;
+        CHECK (composer::parseCompose (s, rep, repAnswer, repResult).isEmpty());
+        CHECK (repResult.cells.size() == 2 && repResult.cells[0].notes.size() == 2 && repResult.cells[0].notes[1].pitch == 43);
+    }
+    CHECK (composer::composeWave (Role::drums) == 0 && composer::composeWave (Role::bass) == 0);
+    CHECK (composer::composeWave (Role::pad) == 1 && composer::composeWave (Role::melody) == 2);
+
     // Messages API envelopes
     juce::var out;
     const auto ok = R"({"type":"message","stop_reason":"end_turn","content":[{"type":"thinking","thinking":""},{"type":"text","text":"{\"cells\":[],\"comment\":\"x\"}"}]})";

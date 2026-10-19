@@ -299,7 +299,7 @@ juce::String applyPlan (Song& song, const juce::var& plan, juce::String& summary
 juce::var composeRequest (const Song& song, const Target& target, const ModelSettings& settings)
 {
     auto schema = object ({
-        { "cells", arrayOf (object ({ { "part", str() }, { "section", str() }, { "notes", str() } })) },
+        { "cells", arrayOf (object ({ { "part", str() }, { "section", str() }, { "sameAs", str() }, { "notes", str() } })) },
         { "comment", str() },
     });
 
@@ -362,11 +362,24 @@ juce::var composeRequest (const Song& song, const Target& target, const ModelSet
             text << ", instructions for this part: " << partPrompt;
         text << "\n";
     }
-    text << "Put a one sentence note on what you wrote in comment.";
+    text << "When a part plays exactly the same notes as in another section (in this answer or already written), "
+            "put that section's id in sameAs and leave notes empty instead of writing them again; otherwise sameAs is an "
+            "empty string.\n"
+            "Put a one sentence note on what you wrote in comment.";
 
     Obj body;
     addCommon (body, settings, schema, text);
     return body;
+}
+
+int composeWave (Role role)
+{
+    switch (role)
+    {
+        case Role::drums: case Role::percussion: case Role::bass: return 0;
+        case Role::melody: case Role::lead: return 2;
+        default: return 1;
+    }
 }
 
 juce::String parseCompose (const Song& song, const Target& target, const juce::var& answer, ComposeResult& result)
@@ -390,11 +403,26 @@ juce::String parseCompose (const Song& song, const Target& target, const juce::v
             continue;
 
         cn.notes = notesFromString (c["notes"].toString());
-        const double len = song.sectionLengthBeats (sec);
+        cn.sameAs = c["sameAs"].toString().trim();
+        result.cells.push_back (std::move (cn));
+    }
+
+    // Repeats: the notes of the same part in another section of this answer, or already written.
+    for (auto& cn : result.cells)
+    {
+        if (! cn.notes.empty() || cn.sameAs.isEmpty() || cn.sameAs == cn.section)
+            continue;
+        auto source = std::find_if (result.cells.begin(), result.cells.end(), [&cn] (const CellNotes& o)
+                                    { return o.part == cn.part && o.section == cn.sameAs && o.sameAs.isEmpty(); });
+        cn.notes = source != result.cells.end() ? source->notes : song.activeNotes (song.partById (cn.part), cn.sameAs);
+    }
+
+    for (auto& cn : result.cells)
+    {
+        const double len = song.sectionLengthBeats (song.sectionById (cn.section));
         sanitise (cn.notes, len);
         for (auto& n : cn.notes)
             n.length = juce::jmin (n.length, juce::jmax (1.0 / 64.0, len - n.start));
-        result.cells.push_back (std::move (cn));
     }
     result.comment = answer["comment"].toString();
     return result.cells.empty() ? "The answer had no usable notes." : juce::String();

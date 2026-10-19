@@ -72,44 +72,57 @@ void AiClient::run()
         if (body.contains ("\"fallbacks\""))
             headers << "anthropic-beta: server-side-fallback-2026-07-01\r\n";
 
+        // Overloaded or rate limited: wait and try again a few times.
+        for (int attempt = 0;; ++attempt)
         {
-            juce::WebInputStream stream (url, true);
-            stream.withExtraHeaders (headers).withConnectionTimeout (10 * 60 * 1000).withNumRedirectsToFollow (2);
+            int retryAfter = 0;
             {
-                const juce::ScopedLock sl (lock);
-                currentStream = &stream;
-            }
-
-            if (! cancelled && stream.connect (nullptr))
-            {
-                status = stream.getStatusCode();
-                const auto type = stream.getResponseHeaders()["Content-Type"];
-                if (status == 200 && type.containsIgnoreCase ("text/event-stream"))
+                juce::WebInputStream stream (url, true);
+                stream.withExtraHeaders (headers).withConnectionTimeout (10 * 60 * 1000).withNumRedirectsToFollow (2);
                 {
-                    dm::composer::StreamAccumulator events;
-                    while (! cancelled && ! threadShouldExit() && ! stream.isExhausted())
+                    const juce::ScopedLock sl (lock);
+                    currentStream = &stream;
+                }
+
+                if (! cancelled && stream.connect (nullptr))
+                {
+                    status = stream.getStatusCode();
+                    retryAfter = stream.getResponseHeaders()["retry-after"].getIntValue();
+                    const auto type = stream.getResponseHeaders()["Content-Type"];
+                    if (status == 200 && type.containsIgnoreCase ("text/event-stream"))
                     {
-                        events.addLine (stream.readNextLine().trimEnd());
-                        received = events.textLength();
+                        dm::composer::StreamAccumulator events;
+                        while (! cancelled && ! threadShouldExit() && ! stream.isExhausted())
+                        {
+                            events.addLine (stream.readNextLine().trimEnd());
+                            received = events.textLength();
+                        }
+                        response = events.message();
                     }
-                    response = events.message();
+                    else
+                    {
+                        response = stream.readEntireStreamAsString();
+                    }
                 }
-                else
+                else if (! cancelled)
                 {
+                    status = stream.getStatusCode();
                     response = stream.readEntireStreamAsString();
+                    if (response.isEmpty())
+                        response = "{\"type\":\"error\",\"error\":{\"message\":\"Could not reach api.anthropic.com. "
+                                   "Check the internet connection.\"}}";
                 }
-            }
-            else if (! cancelled)
-            {
-                status = stream.getStatusCode();
-                response = stream.readEntireStreamAsString();
-                if (response.isEmpty())
-                    response = "{\"type\":\"error\",\"error\":{\"message\":\"Could not reach api.anthropic.com. "
-                               "Check the internet connection.\"}}";
+
+                const juce::ScopedLock sl (lock);
+                currentStream = nullptr;
             }
 
-            const juce::ScopedLock sl (lock);
-            currentStream = nullptr;
+            const bool busyServer = status == 429 || status == 529 || response.contains ("overloaded_error");
+            if (! busyServer || attempt >= 3 || cancelled || threadShouldExit())
+                break;
+            const int waitMs = 1000 * juce::jlimit (2, 60, retryAfter > 0 ? retryAfter : 5 << attempt);
+            for (int t = 0; t < waitMs && ! cancelled && ! threadShouldExit(); t += 100)
+                juce::Thread::sleep (100);
         }
 
         if (cancelled)

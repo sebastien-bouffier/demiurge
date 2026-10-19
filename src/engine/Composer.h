@@ -39,10 +39,16 @@ struct Target
 
 juce::var composeRequest (const Song& song, const Target& target, const ModelSettings& settings);
 
+// COMPOSE ALL writes the parts in three waves, the parts of a wave at the same time, each wave
+// hearing the ones before it: 0 rhythm (drums, percussion, bass), 1 harmony and texture,
+// 2 melody and leads.
+int composeWave (Role role);
+
 struct CellNotes
 {
     juce::String part, section;
     Notes notes;
+    juce::String sameAs; // section whose notes this cell repeats (resolved by parseCompose)
 };
 
 struct ComposeResult
