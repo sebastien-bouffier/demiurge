@@ -111,6 +111,7 @@ juce_add_plugin(Demiurge
     PLUGIN_MANUFACTURER_CODE Bido
     PLUGIN_CODE Dmrg
     PRODUCT_NAME "Demiurge"
+    PLUGIN_NAME "Demiurge MIDI Composer"
     FORMATS ${DEMIURGE_FORMATS}
     IS_SYNTH FALSE
     IS_MIDI_EFFECT FALSE      # stays a normal FX with audio pass-through: Reaper routes its MIDI out
@@ -171,6 +172,7 @@ if(APPLE)
         PLUGIN_MANUFACTURER_CODE Bido
         PLUGIN_CODE Dmrf
         PRODUCT_NAME "Demiurge FX"
+        PLUGIN_NAME "Demiurge FX MIDI Composer"
         FORMATS AU
         IS_SYNTH FALSE
         IS_MIDI_EFFECT TRUE
