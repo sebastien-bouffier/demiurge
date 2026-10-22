@@ -4,7 +4,7 @@
 #include "DemiurgeLook.h"
 #include "PianoRoll.h"
 #include "plugin/PluginProcessor.h"
-#include "plugin/Presets.h"
+#include "kit/TopBar.h"
 
 // A button that, dragged out of the plugin, drops a MIDI file into the DAW. A plain click
 // still clicks.
@@ -48,7 +48,7 @@ public:
     void layout(); // positions every control at kWidth x kHeight; resized() scales them to the window
 
     static constexpr int kWidth = 1280, kHeight = 820; // design size; the window is resizable
-    static constexpr int kTopBar = 48;
+    static constexpr int kTopBar = bidoo::kit::TopBar::kHeight;
 
     // For the snapshot tool
     void applyTheme (bool light);
@@ -84,13 +84,6 @@ private:
     void importFromReaper();
     void stepTake (int delta);
 
-    // Presets (the Bidoo top bar)
-    void rebuildPresetList (const juce::String& selectName);
-    void presetChosen();
-    void stepPreset (int delta);
-    void updatePresetButtons();
-    void showSaveDialog();
-    void confirmDelete();
 
     juce::String partLabel (const juce::String& partId);
     juce::String sectionLabel (const juce::String& sectionId);
@@ -100,17 +93,14 @@ private:
     bidoo::look::ScopedInterDefault interFonts; // Inter for every font that doesn't name a typeface
     DemiurgeLook lnf;                           // declared early so it is destroyed late
     DemiurgeProcessor& processor;
-    PresetManager presets;
+    bidoo::kit::PresetManager presets { processor.sound };
+    bidoo::kit::TopBar topBar; // logo, songs, undo / redo, KEY, CPU, version, theme (no A/B)
 
     ArrangementView arrangement;
     PianoRoll roll;
 
-    // Top bar
-    juce::ComboBox presetCombo;
-    bidoo::look::ArrowButton presetPrev { false, "Previous preset" }, presetNext { true, "Next preset" };
-    juce::TextButton presetSave { "SAVE" }, presetDelete { "DELETE" };
-    juce::TextButton undoButton { "UNDO" }, redoButton { "REDO" }, keyButton { "KEY" };
-    juce::TextButton themeToggle;
+    // in the top bar
+    juce::TextButton keyButton { "KEY" };
 
     // Song panel
     juce::TextEditor ideaEditor, styleEditor, titleEditor;

@@ -42,6 +42,7 @@ DemiurgeProcessor::DemiurgeProcessor()
     modelDirty = false;
     setSelection (song().part (0)[ids::id].toString(), song().section (0)[ids::id].toString());
     startTimerHz (30);
+    sound.applyUserDefault(); // what new instances start with (Save as default)
 }
 
 DemiurgeProcessor::~DemiurgeProcessor()
@@ -71,6 +72,7 @@ void DemiurgeProcessor::prepareToPlay (double sr, int)
 //==============================================================================
 void DemiurgeProcessor::processBlock (juce::AudioBuffer<float>& audio, juce::MidiBuffer& midi)
 {
+    const bidoo::kit::CpuLoad::Scope cpu (cpuLoad, *this, audio.getNumSamples());
     juce::ScopedNoDenormals noDenormals;
     const int numSamples = audio.getNumSamples();
 
@@ -494,7 +496,10 @@ void DemiurgeProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.removeChild (state.getChildWithName (ids::SONG), nullptr);
     state.appendChild (songTree.createCopy(), nullptr);
     if (auto xml = state.createXml())
+    {
+        sound.writeState (*xml); // the preset reference
         copyXmlToBinary (*xml, destData);
+    }
 }
 
 void DemiurgeProcessor::setStateInformation (const void* data, int sizeInBytes)
@@ -503,6 +508,7 @@ void DemiurgeProcessor::setStateInformation (const void* data, int sizeInBytes)
     if (xml == nullptr || ! xml->hasTagName (apvts.state.getType()))
         return;
 
+    sound.readState (*xml);
     auto state = juce::ValueTree::fromXml (*xml);
     auto songChild = state.getChildWithName (ids::SONG);
     state.removeChild (songChild, nullptr);
@@ -511,6 +517,27 @@ void DemiurgeProcessor::setStateInformation (const void* data, int sizeInBytes)
     apvts.replaceState (state);
     if (songChild.isValid())
         loadSong (songChild);
+    sound.stateReplaced();
+}
+
+// A preset is a whole song: the parameters (the kit's) and the SONG tree.
+void DemiurgeProcessor::addToPreset (juce::XmlElement& presetXml) const
+{
+    if (auto* old = presetXml.getChildByName (ids::SONG.toString()))
+        presetXml.removeChildElement (old, true);
+    if (auto song = songTree.createXml())
+        presetXml.addChildElement (song.release());
+}
+
+void DemiurgeProcessor::presetLoaded (const juce::XmlElement* presetXml)
+{
+    if (presetXml != nullptr)
+        if (auto* songXml = presetXml->getChildByName (ids::SONG.toString()))
+        {
+            loadSong (juce::ValueTree::fromXml (*songXml));
+            return;
+        }
+    resetSong(); // a factory preset: an empty song
 }
 
 juce::AudioProcessorEditor* DemiurgeProcessor::createEditor() { return new DemiurgeEditor (*this); }

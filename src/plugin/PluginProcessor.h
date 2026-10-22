@@ -1,5 +1,7 @@
 #pragma once
 
+#include "ui/kit/CpuLoad.h"
+#include "ui/kit/SoundState.h"
 #include "AiClient.h"
 #include "engine/Composer.h"
 #include "engine/Player.h"
@@ -15,6 +17,7 @@
 // Demiurge: an FX with audio pass-through that writes and plays MIDI (like MetroMidi, the
 // shape Reaper, Bitwig, Cubase and most hosts expect from a MIDI generator).
 class DemiurgeProcessor final : public juce::AudioProcessor,
+                                public bidoo::kit::SoundClient,
                                 private juce::ValueTree::Listener,
                                 private juce::Timer
 {
@@ -51,6 +54,13 @@ public:
     // ---- the song (message thread) ----
     juce::UndoManager undo;
     juce::ValueTree songTree;
+
+    // The Bidoo kit: presets (whole songs), the preset reference, the user's default; its undo
+    // goes into `undo` with the song's edits. No A/B: a song is too much to swap.
+    bidoo::kit::SoundState sound { *this, apvts, *this, &undo };
+    bidoo::kit::CpuLoad cpuLoad; // the top bar's CPU meter
+    void addToPreset (juce::XmlElement& presetXml) const override;   // the song
+    void presetLoaded (const juce::XmlElement* presetXml) override;  // the song back, or an empty one
     dm::Song song() { return dm::Song (songTree, &undo); }
     void resetSong();
     void loadSong (const juce::ValueTree& newSong); // replaces the song, clears undo history

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(Demiurge VERSION 0.1.4 LANGUAGES C CXX)
+project(Demiurge VERSION 0.1.5 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -60,7 +60,9 @@ set(DEMIURGE_PLUGIN_SOURCES
     src/plugin/PluginProcessor.cpp
     src/ui/ArrangementView.cpp
     src/ui/PianoRoll.cpp
-    src/ui/PluginEditor.cpp)
+    src/ui/PluginEditor.cpp
+    src/ui/kit/PresetBrowser.cpp
+    src/ui/kit/TopBar.cpp)
 
 # HTTPS: WinINet on Windows, NSURLSession on macOS, libcurl on Linux (NEEDS_CURL below).
 if(UNIX AND NOT APPLE)
@@ -91,7 +93,9 @@ function(demiurge_setup target)
         JUCE_WEB_BROWSER=0
         JUCE_LOAD_CURL_SYMBOLS_LAZILY=1
         JUCE_VST3_CAN_REPLACE_VST2=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0)
+        JUCE_DISPLAY_SPLASH_SCREEN=0
+        BIDOO_KIT_FOLDER="Demiurge"     # the Bidoo kit (src/ui/kit, a copy of fab's): <app data>/Bidoo/Demiurge
+        BIDOO_KIT_EXT="dmsong")         # songs: Presets/*.dmsong
     target_include_directories(${target} PRIVATE src src/ui)
     target_compile_options(${target} PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
     target_link_libraries(${target}
@@ -191,6 +195,7 @@ if(DEMIURGE_BUILD_SNAPSHOT)
     target_compile_definitions(ui_snapshot PRIVATE
         JucePlugin_Name="Demiurge" JucePlugin_IsMidiEffect=0 JucePlugin_Manufacturer="Bidoo"
         JUCE_WEB_BROWSER=0 JUCE_LOAD_CURL_SYMBOLS_LAZILY=1
-        JUCE_STANDALONE_APPLICATION=1)
+        JUCE_STANDALONE_APPLICATION=1 JucePlugin_VersionString="${PROJECT_VERSION}"
+        BIDOO_KIT_FOLDER="Demiurge" BIDOO_KIT_EXT="dmsong")
     target_link_libraries(ui_snapshot PRIVATE DemiurgeFonts juce::juce_audio_utils)
 endif()

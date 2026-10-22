@@ -169,6 +169,73 @@ inline int titleWidth (const juce::String& name)
     return juce::roundToInt (std::ceil (juce::GlyphArrangement::getStringWidth (titleFont(), name)));
 }
 
+// The Bidoo logo: the "oo" of bidoo as two knobs, rings with their pointers. The first is in the
+// text colour, the second in the accent; they link, the first passing over the second at the top
+// and under it at the bottom, with a gap of the background colour around each crossing. Drawn
+// from a 106 x 60 design (rings r 23, strokes 9), fitted and centred in `area`; `background` is
+// the colour behind it (the gaps).
+constexpr float kLogoAspect = 106.0f / 60.0f;
+constexpr int kLogoBarHeight = 23; // in the top bar, with a kBarGap and a thin divider before the name
+
+inline void drawLogo (juce::Graphics& g, juce::Rectangle<float> area, const Palette& p, juce::Colour background)
+{
+    const float s = juce::jmin (area.getWidth() / 106.0f, area.getHeight() / 60.0f);
+    const auto origin = area.getCentre() - juce::Point<float> (53.0f, 30.0f) * s;
+    const auto t = juce::AffineTransform::translation (0.0f, -10.0f).scaled (s).translated (origin);
+    const juce::Point<float> c1 (30.0f, 40.0f), c2 (75.0f, 40.0f);
+    constexpr float r = 23.0f, w = 9.0f, gap = 3.5f;
+
+    auto ring = [&] (juce::Point<float> c)
+    {
+        juce::Path path;
+        path.addCentredArc (c.x, c.y, r, r, 0.0f, 0.0f, juce::MathConstants<float>::twoPi, true);
+        path.closeSubPath();
+        return path;
+    };
+    auto stroke = [&] (const juce::Path& path, float width, juce::Colour colour)
+    {
+        g.setColour (colour);
+        // (JUCE applies the stroke width after the transform: in pixels)
+        g.strokePath (path, juce::PathStrokeType (width * s, juce::PathStrokeType::curved, juce::PathStrokeType::rounded), t);
+    };
+    auto clipTo = [&] (juce::Rectangle<float> r2)
+    {
+        juce::Path clip;
+        clip.addRectangle (r2);
+        g.reduceClipRegion (clip, t);
+    };
+    auto pointer = [&] (juce::Point<float> c, float dx, juce::Colour colour)
+    {
+        juce::Path line;
+        line.startNewSubPath (c);
+        line.lineTo (c + juce::Point<float> (dx, -1.0f) * (r * juce::MathConstants<float>::sqrt2 * 0.5f));
+        stroke (line, w, colour);
+    };
+    const auto first = ring (c1), second = ring (c2);
+
+    // the accent ring, then the gap around the first ring where it passes over (the top crossing)
+    stroke (second, w, p.accent);
+    {
+        juce::Graphics::ScopedSaveState state (g);
+        clipTo ({ 0.0f, 0.0f, 110.0f, 36.0f });
+        stroke (first, w + 2.0f * gap, background);
+    }
+    stroke (first, w, p.text);
+    pointer (c1, -1.0f, p.text);
+    // the bottom crossing: the accent ring over the first one, flat ends, the gap around it
+    {
+        juce::Graphics::ScopedSaveState state (g);
+        clipTo ({ 40.0f, 32.5f, 26.0f, 29.5f });
+        stroke (second, w + 2.0f * gap, background);
+    }
+    {
+        juce::Graphics::ScopedSaveState state (g);
+        clipTo ({ 40.0f, 36.0f, 26.0f, 26.0f });
+        stroke (second, w, p.accent);
+    }
+    pointer (c2, 1.0f, p.accent);
+}
+
 // The plugin name in the text colour, its capitals centred on centreY, starting at x.
 inline void drawTitle (juce::Graphics& g, const juce::String& name, int x, int centreY, const Palette& p)
 {

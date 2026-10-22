@@ -7,30 +7,37 @@ using namespace dm;
 
 //==============================================================================
 DemiurgeEditor::DemiurgeEditor (DemiurgeProcessor& p)
-    : AudioProcessorEditor (&p), processor (p), presets (p), arrangement (p, lnf), roll (p, lnf)
+    : AudioProcessorEditor (&p), processor (p),
+      topBar (p.sound, presets, { "DEMIURGE", JucePlugin_VersionString, false, [&cpu = p.cpuLoad] { return cpu.getLoad(); },
+                                  60 + bidoo::look::kBarGroupGap }),
+      arrangement (p, lnf), roll (p, lnf)
 {
     setLookAndFeel (&lnf);
 
-    // ---- top bar ----
-    presetCombo.setTextWhenNothingSelected ("Select song...");
-    presetCombo.onChange = [this] { presetChosen(); };
-    presetPrev.onClick = [this] { stepPreset (-1); };
-    presetNext.onClick = [this] { stepPreset (+1); };
-    presetSave.onClick = [this] { showSaveDialog(); };
-    presetDelete.onClick = [this] { confirmDelete(); };
-    undoButton.onClick = [this] { processor.undo.undo(); refreshAll(); };
-    redoButton.onClick = [this] { processor.undo.redo(); refreshAll(); };
+    // ---- top bar (the Bidoo kit's): songs as presets, undo / redo of the song and the knobs, KEY ----
     keyButton.onClick = [this] { showSettings(); };
-    themeToggle.onClick = [this]
+    addAndMakeVisible (keyButton);
+    topBar.onThemeClicked = [this] (bool light)
     {
-        const bool light = ! lnf.light();
         applyTheme (light);
         settings::set ("theme", light ? "light" : "dark");
     };
-    for (auto* c : std::initializer_list<juce::Component*> { &presetCombo, &presetPrev, &presetNext, &presetSave,
-                                                             &presetDelete, &undoButton, &redoButton, &keyButton, &themeToggle })
-        addAndMakeVisible (*c);
-    rebuildPresetList (presets.getCurrentName());
+    topBar.onUndoRedo = [this] { refreshAll(); };
+    topBar.onPresetLoaded = [this]
+    {
+        processor.undo.clearUndoHistory(); // a new song: as when it was loaded before
+        refreshAll();
+    };
+    topBar.layoutExtras = [this] (juce::Rectangle<int>& row)
+    {
+        keyButton.setBounds (bidoo::look::barSlot (row, 60, true, bidoo::look::kBarGroupGap));
+    };
+    topBar.onBrowserCreated = [this] (juce::Component& b)
+    {
+        b.setTransform (juce::AffineTransform::scale ((float) getWidth() / (float) kWidth));
+    };
+    addAndMakeVisible (topBar);
+    topBar.attachTo (*this);
 
     auto label = [this] (juce::Label& l, const juce::String& text)
     {
@@ -363,10 +370,7 @@ void DemiurgeEditor::refreshCellPanel()
 
 void DemiurgeEditor::refreshUndoButtons()
 {
-    undoButton.setEnabled (processor.undo.canUndo());
-    redoButton.setEnabled (processor.undo.canRedo());
-    undoButton.setTooltip (processor.undo.getUndoDescription());
-    redoButton.setTooltip (processor.undo.getRedoDescription());
+    // the top bar's undo / redo follow the history by themselves
 }
 
 void DemiurgeEditor::timerCallback()
@@ -648,111 +652,13 @@ void DemiurgeEditor::importFromReaper()
 }
 
 //==============================================================================
-//  Presets
-//==============================================================================
-void DemiurgeEditor::rebuildPresetList (const juce::String& selectName)
-{
-    presets.refresh();
-    presetCombo.clear (juce::dontSendNotification);
-    const auto& entries = presets.getEntries();
-    bool wroteUserHeading = false;
-    presetCombo.addSectionHeading ("Factory");
-    for (size_t i = 0; i < entries.size(); ++i)
-    {
-        if (! entries[i].factory && ! wroteUserHeading)
-        {
-            presetCombo.addSeparator();
-            presetCombo.addSectionHeading ("User");
-            wroteUserHeading = true;
-        }
-        presetCombo.addItem (entries[i].name, (int) i + 1);
-    }
-    const int idx = presets.indexOfName (selectName);
-    presetCombo.setSelectedId (idx >= 0 ? idx + 1 : 0, juce::dontSendNotification);
-    updatePresetButtons();
-}
-
-void DemiurgeEditor::presetChosen()
-{
-    const int idx = presetCombo.getSelectedId() - 1;
-    if (idx < 0)
-        return;
-    presets.load (idx);
-    updatePresetButtons();
-    refreshAll();
-}
-
-void DemiurgeEditor::stepPreset (int delta)
-{
-    const int n = (int) presets.getEntries().size();
-    if (n == 0)
-        return;
-    const int current = presetCombo.getSelectedId() - 1;
-    int next = current < 0 ? (delta > 0 ? 0 : n - 1) : current + delta;
-    next = (next % n + n) % n;
-    presetCombo.setSelectedId (next + 1, juce::sendNotificationSync);
-}
-
-void DemiurgeEditor::updatePresetButtons()
-{
-    const int idx = presetCombo.getSelectedId() - 1;
-    const auto& entries = presets.getEntries();
-    presetDelete.setEnabled (idx >= 0 && idx < (int) entries.size() && ! entries[(size_t) idx].factory);
-}
-
-void DemiurgeEditor::showSaveDialog()
-{
-    auto* w = new juce::AlertWindow ("Save song", "Song name:", juce::MessageBoxIconType::NoIcon, this);
-    w->addTextEditor ("name", presets.getCurrentName().isNotEmpty() ? presets.getCurrentName() : processor.songTree[ids::title].toString());
-    w->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    w->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    juce::Component::SafePointer<DemiurgeEditor> safe (this);
-    w->enterModalState (true, juce::ModalCallbackFunction::create ([safe, w] (int result)
-    {
-        if (result != 1 || safe == nullptr)
-            return;
-        const auto name = w->getTextEditorContents ("name").trim();
-        if (name.isEmpty())
-            return;
-        if (safe->presets.saveUser (name))
-            safe->rebuildPresetList (safe->presets.getCurrentName());
-        else
-            juce::AlertWindow::showAsync (juce::MessageBoxOptions()
-                                              .withIconType (juce::MessageBoxIconType::WarningIcon)
-                                              .withTitle ("Save song")
-                                              .withMessage ("The song could not be saved.\n" + PresetManager::getUserDirectory().getFullPathName())
-                                              .withButton ("OK"),
-                                          [] (int) {});
-    }), true);
-}
-
-void DemiurgeEditor::confirmDelete()
-{
-    const int idx = presetCombo.getSelectedId() - 1;
-    const auto& entries = presets.getEntries();
-    if (idx < 0 || idx >= (int) entries.size() || entries[(size_t) idx].factory)
-        return;
-    const auto name = entries[(size_t) idx].name;
-    juce::Component::SafePointer<DemiurgeEditor> safe (this);
-    juce::AlertWindow::showAsync (juce::MessageBoxOptions::makeOptionsOkCancel (juce::MessageBoxIconType::WarningIcon, "Delete song",
-                                                                                "Delete the song \"" + name + "\"?", "Delete", "Cancel", this),
-                                  [safe, idx] (int result)
-                                  {
-                                      if (result != 1 || safe == nullptr)
-                                          return;
-                                      safe->presets.deleteUser (idx);
-                                      safe->rebuildPresetList ({});
-                                  });
-}
-
-//==============================================================================
 //  Theme and layout
 //==============================================================================
 void DemiurgeEditor::applyTheme (bool light)
 {
     lnf.setLight (light);
     const auto& pal = lnf.palette();
-    themeToggle.setButtonText (bidoo::look::themeButtonText (light));
+    topBar.applyTheme (pal, light);
 
     for (auto* l : { &titleLabel, &ideaLabel, &keyLabel, &bpmLabel, &tsLabel, &styleLabel, &partNameLabel, &roleLabel,
                      &channelLabel, &programLabel, &descriptionLabel, &promptLabel })
@@ -784,8 +690,6 @@ void DemiurgeEditor::paint (juce::Graphics& g)
     const auto& pal = lnf.palette();
     g.fillAll (pal.background);
     g.addTransform (juce::AffineTransform::scale ((float) getWidth() / (float) kWidth));
-
-    bidoo::look::drawTitle (g, "DEMIURGE", bidoo::look::kBarMargin, kTopBar / 2, pal);
 
     auto panel = [&] (juce::Rectangle<int> r, const juce::String& heading)
     {
@@ -827,18 +731,10 @@ void DemiurgeEditor::layout()
     using namespace bidoo::look;
     const juce::Rectangle<int> bounds (kWidth, kHeight);
 
-    // ---- top bar: DEMIURGE | < songs > SAVE DELETE | UNDO REDO ......... KEY | theme ----
-    auto top = bounds.withHeight (kTopBar).reduced (kBarMargin, 0);
-    top.removeFromLeft (titleWidth ("DEMIURGE") + kBarGroupGap);
-    presetPrev.setBounds (barSlot (top, kArrowWidth));
-    presetCombo.setBounds (barSlot (top, kPresetListWidth));
-    presetNext.setBounds (barSlot (top, kArrowWidth, false, 2 * kBarGap));
-    presetSave.setBounds (barSlot (top, kSaveWidth));
-    presetDelete.setBounds (barSlot (top, kDeleteWidth, false, kBarGroupGap));
-    undoButton.setBounds (barSlot (top, 60));
-    redoButton.setBounds (barSlot (top, 60));
-    themeToggle.setBounds (barSlot (top, kThemeWidth, true, kBarGroupGap));
-    keyButton.setBounds (barSlot (top, 60, true));
+    // ---- top bar (the Bidoo kit's), with KEY ----
+    topBar.setBounds (bounds.withHeight (kTopBar));
+    topBar.setBrowserArea (bounds.withTrimmedTop (kTopBar));
+    topBar.resized(); // KEY, even when the bar keeps its size
 
     // ---- panels ----
     auto body = bounds.withTrimmedTop (kTopBar).reduced (12, 0).withTrimmedBottom (8);

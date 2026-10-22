@@ -6,7 +6,7 @@ writes every part (drums, percussion, bass, keys, pads, strings, brass, woodwind
 synths, arps, guitars, and a melody line for a singer), plays them in sync with your
 transport, and keeps every version so you can try ideas and roll back.
 
-Version 0.1.4. 0.1.4: COMPOSE ALL writes the parts of each wave at the same time, reuses repeated sections, and retries when Claude is busy. 0.1.3: answers are streamed with a larger length limit (thinking no longer cuts PLAN SONG short), and the status bar shows whether Claude is thinking or writing. 0.1.2: the CLAP install folder follows Windows' Common Files location, like the other Bidoo plugins. 0.1.1: section directions and voicing instructions (inversions, slash chords).
+Version 0.1.5. 0.1.5: the Bidoo top bar and song browser (logo, folders, tags, search, favourites, CPU use, version); undo / redo covers the song and the knobs. 0.1.4: COMPOSE ALL writes the parts of each wave at the same time, reuses repeated sections, and retries when Claude is busy. 0.1.3: answers are streamed with a larger length limit (thinking no longer cuts PLAN SONG short), and the status bar shows whether Claude is thinking or writing. 0.1.2: the CLAP install folder follows Windows' Common Files location, like the other Bidoo plugins. 0.1.1: section directions and voicing instructions (inversions, slash chords).
 
 ![Demiurge](docs/screenshot-light.png)
 
@@ -33,7 +33,12 @@ Version 0.1.4. 0.1.4: COMPOSE ALL writes the parts of each wave at the same time
    chords (C/E) for exact bass notes. The piano roll edits by hand: double-click to
    add or delete a note, drag to move, drag the right edge to resize. QUANT, HUMAN and OCT -/+
    work on the current take.
-5. **Songs** are saved as presets (SAVE in the top bar) and inside your DAW project.
+5. **Songs** are saved as presets (SAVE in the top bar: name, folder, tags) and inside your DAW
+   project. The top bar is the one every Bidoo plugin has: a click on the song name opens the
+   browser (folders, tags, search, favourites, rename, move, delete), undo / redo (Ctrl/Cmd+Z,
+   Ctrl/Cmd+Shift+Z) goes through the song's edits and the knobs, then KEY, the CPU use, the
+   version and the theme (no A/B: a whole song is too much to swap). Songs are `.dmsong` files
+   in `<app data>/Bidoo/Demiurge/Presets`.
 
 Claude sees the whole song every time: key, tempo, chords, the other parts already written
 in the same sections, and the same part in the other sections, so new parts fit and repeated
