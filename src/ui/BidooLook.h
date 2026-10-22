@@ -148,7 +148,7 @@ inline juce::Colour interactive (juce::Colour c, const Palette& p, bool highligh
 
 // ---------------------------------------------------------------------------------------------
 //  Top bar: every plugin's first row reads the same way, all on one centre line:
-//    NAME   [<] [ preset list ] [>]  SAVE  DELETE   ...plugin controls...   OUTPUT   [DARK/LIGHT]
+//    NAME  [<] [ preset list ] [>]  SAVE  DELETE  [undo] [redo] [A|B] [A>B]  ...plugin controls...  OUTPUT  [DARK/LIGHT]
 //  The theme button is always the last one on the right. With Inter, JUCE centres the capitals
 //  of a text box on the box's centre, so a title and buttons laid out with the same centre line
 //  line up exactly.
@@ -158,7 +158,9 @@ constexpr int kBarGap = 4;            // between the controls of a group
 constexpr int kBarGroupGap = 16;      // between groups
 constexpr int kBarMargin = 16;        // left and right edges of the window
 constexpr float kTitleHeight = 22.0f;
-constexpr int kArrowWidth = 28, kPresetListWidth = 220, kSaveWidth = 60, kDeleteWidth = 68, kThemeWidth = 68;
+constexpr int kArrowWidth = 28, kPresetListWidth = 200, kSaveWidth = 60, kDeleteWidth = 68, kThemeWidth = 68;
+constexpr int kHistoryWidth = 24, kAbWidth = 40, kAbCopyWidth = 36; // undo, redo, A/B, copy A>B
+constexpr int kVersionWidth = 46; // the version text left of the theme button
 
 inline juce::Font titleFont() { return font (kTitleHeight, true); }
 
@@ -214,6 +216,45 @@ private:
     bool forward;
 };
 
+// Undo / redo: the button face with a small hooked arrow (back for undo, forward for redo), drawn
+// at the size of the preset arrows.
+class HistoryButton : public juce::Button
+{
+public:
+    HistoryButton (bool redoDirection, const juce::String& tooltip)
+        : juce::Button (redoDirection ? "Redo" : "Undo"), redo (redoDirection)
+    {
+        setTooltip (tooltip);
+    }
+
+    void paintButton (juce::Graphics& g, bool highlighted, bool down) override
+    {
+        getLookAndFeel().drawButtonBackground (g, *this, findColour (juce::TextButton::buttonColourId),
+                                               highlighted && isEnabled(), down);
+        const auto c = getLocalBounds().toFloat().getCentre();
+        // the undo arrow: a head pointing left at the top, the shaft turning down and back
+        juce::Path shaft;
+        shaft.startNewSubPath (c.x - 2.5f, c.y - 2.25f);
+        shaft.lineTo (c.x + 1.25f, c.y - 2.25f);
+        shaft.addCentredArc (c.x + 1.25f, c.y + 1.0f, 3.25f, 3.25f, 0.0f, 0.0f, juce::MathConstants<float>::pi);
+        shaft.lineTo (c.x - 2.0f, c.y + 4.25f);
+        juce::Path head;
+        head.addTriangle (c.x - 6.0f, c.y - 2.25f, c.x - 2.0f, c.y - 5.75f, c.x - 2.0f, c.y + 1.25f);
+        if (redo)
+        {
+            const auto flip = juce::AffineTransform::scale (-1.0f, 1.0f, c.x, c.y);
+            shaft.applyTransform (flip);
+            head.applyTransform (flip);
+        }
+        g.setColour (findColour (juce::TextButton::textColourOffId).withMultipliedAlpha (isEnabled() ? 1.0f : 0.4f));
+        g.strokePath (shaft, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.fillPath (head);
+    }
+
+private:
+    bool redo;
+};
+
 // The text of a combo box and of a ListButton.
 inline juce::Font comboFont() { return font (13.0f); }
 
@@ -242,8 +283,8 @@ public:
 };
 
 // ---------------------------------------------------------------------------------------------
-//  Knob: a thin track, the value arc (from the centre for bipolar ranges) with a dot at the value,
-//  around a small top-lit disc with a short pointer line.
+//  Knob: a thin track, the value arc (from the centre for bipolar ranges), around a small top-lit
+//  disc with a short pointer line. No dot on the arc: the pointer shows the value.
 // ---------------------------------------------------------------------------------------------
 struct KnobGeometry
 {
@@ -293,7 +334,7 @@ inline void drawKnob (juce::Graphics& g, const KnobGeometry& k, float startAngle
     g.setColour (p.well);
     g.strokePath (track, stroke);
 
-    // value and its dot
+    // value
     const bool on = active && fill.getAlpha() > 0;
     if (on)
     {
@@ -302,8 +343,6 @@ inline void drawKnob (juce::Graphics& g, const KnobGeometry& k, float startAngle
                              juce::jmax (k.zeroAngle, k.angle), true);
         g.setColour (fill);
         g.strokePath (value, stroke);
-        const float dot = k.lineWidth * 3.0f;
-        g.fillEllipse (juce::Rectangle<float> (dot, dot).withCentre (c.getPointOnCircumference (k.arcRadius, k.angle)));
     }
 
     if (withPointer)
@@ -314,6 +353,111 @@ inline void drawKnob (juce::Graphics& g, const KnobGeometry& k, float startAngle
                     juce::jmax (1.6f, k.lineWidth * 0.8f));
     }
 }
+
+// The knob of a rotary slider as its look draws it, in the slider's own coordinates (translate
+// `centre` to draw over it from another component). Use this rather than redoing the maths from
+// the slider's bounds, so rings drawn around a knob always sit on it.
+inline KnobGeometry knobGeometryOf (juce::Slider& s)
+{
+    const auto rp = s.getRotaryParameters();
+    return knobGeometry (s.getLookAndFeel().getSliderLayout (s).sliderBounds.toFloat(),
+                         (float) s.valueToProportionOfLength (s.getValue()), rp.startAngleRadians, rp.endAngleRadians, s);
+}
+
+// Modulation: the range a modulation moves a knob through (fromAngle: the knob's own value,
+// toAngle: where the modulation has it), as a thin ring just outside the value arc, clear of the
+// arc and the body, in the value arc's colour. No dot: the pointer shows the knob's value.
+constexpr float kModRingWidth = 1.5f, kModRingGap = 1.5f;
+
+inline float modRingRadius (const KnobGeometry& k)
+{
+    return k.arcRadius + k.lineWidth * 0.5f + kModRingGap + kModRingWidth * 0.5f;
+}
+
+inline void drawModRing (juce::Graphics& g, const KnobGeometry& k, float fromAngle, float toAngle, juce::Colour fill)
+{
+    if (std::abs (toAngle - fromAngle) < 0.002f)
+        return;
+    const float r = modRingRadius (k);
+    juce::Path ring;
+    ring.addCentredArc (k.centre.x, k.centre.y, r, r, 0.0f, juce::jmin (fromAngle, toAngle), juce::jmax (fromAngle, toAngle), true);
+    g.setColour (fill);
+    g.strokePath (ring, juce::PathStrokeType (kModRingWidth, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+}
+
+// The knob's handling, for plugins without their own (fab's ContextClick does the same): drag,
+// Shift + drag for fine steps, double-click to reset (to the setDoubleClickReturnValue value),
+// Shift + double-click calls onTypeValue (typed entry). The caption under a knob shows the value
+// only while it is dragged, or a moment after a wheel turn, a reset or a typed value.
+class KnobSlider : public juce::Slider
+{
+public:
+    using juce::Slider::Slider;
+
+    std::function<void()> onTypeValue;
+
+    static constexpr double kFineFactor = 0.15; // Shift: about a seventh of the usual speed
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        juce::Slider::mouseDown (e); // begins the drag (the host's gesture), as usual
+        const auto style = getSliderStyle();
+        ownDrag = isEnabled() && ! e.mods.isPopupMenu() && getMaximum() > getMinimum()
+                  && (style == RotaryHorizontalDrag || style == RotaryVerticalDrag || style == RotaryHorizontalVerticalDrag);
+        lastDragPos = e.position;
+        dragPos = valueToProportionOfLength (getValue());
+    }
+
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (! ownDrag)
+        {
+            juce::Slider::mouseDrag (e);
+            return;
+        }
+        // relative to the last event (not the press), so Shift may change at any time
+        const auto d = e.position - lastDragPos;
+        lastDragPos = e.position;
+        const auto style = getSliderStyle();
+        const double move = style == RotaryHorizontalDrag ? (double) d.x
+                          : style == RotaryVerticalDrag   ? (double) -d.y
+                                                          : (double) d.x - (double) d.y;
+        dragPos = juce::jlimit (0.0, 1.0, dragPos + move / (double) juce::jmax (1, getMouseDragSensitivity())
+                                                        * (e.mods.isShiftDown() ? kFineFactor : 1.0));
+        setValue (snapValue (proportionOfLengthToValue (dragPos), absoluteDrag), juce::sendNotificationSync);
+    }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        ownDrag = false;
+        juce::Slider::mouseUp (e);
+    }
+
+    void mouseDoubleClick (const juce::MouseEvent& e) override
+    {
+        if (onTypeValue != nullptr && e.mods.isShiftDown() && ! e.mods.isPopupMenu())
+        {
+            if (isEnabled())
+                onTypeValue();
+            return;
+        }
+        juce::Slider::mouseDoubleClick (e);
+    }
+
+    // Back to the double-click value, as one gesture (the host records it).
+    void resetToDefault()
+    {
+        if (! isDoubleClickReturnEnabled() || ! isEnabled())
+            return;
+        const ScopedDragNotification gesture (*this);
+        setValue (getDoubleClickReturnValue(), juce::sendNotificationSync);
+    }
+
+private:
+    bool ownDrag = false;
+    juce::Point<float> lastDragPos;
+    double dragPos = 0.0;
+};
 
 // The usual LookAndFeel::drawRotarySlider body.
 inline void drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h, float pos, float start, float end,
