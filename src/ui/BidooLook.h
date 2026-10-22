@@ -386,7 +386,7 @@ inline void drawModRing (juce::Graphics& g, const KnobGeometry& k, float fromAng
 }
 
 // The knob's handling, for plugins without their own (fab's ContextClick does the same): drag,
-// Shift + drag for fine steps, double-click to reset (to the setDoubleClickReturnValue value),
+// Ctrl + drag (Cmd on macOS) for fine steps, double-click to reset (to the setDoubleClickReturnValue value),
 // Shift + double-click calls onTypeValue (typed entry). The caption under a knob shows the value
 // only while it is dragged, or a moment after a wheel turn, a reset or a typed value.
 class KnobSlider : public juce::Slider
@@ -396,7 +396,7 @@ public:
 
     std::function<void()> onTypeValue;
 
-    static constexpr double kFineFactor = 0.15; // Shift: about a seventh of the usual speed
+    static constexpr double kFineFactor = 0.15; // Ctrl (Cmd): about a seventh of the usual speed
 
     void mouseDown (const juce::MouseEvent& e) override
     {
@@ -415,7 +415,7 @@ public:
             juce::Slider::mouseDrag (e);
             return;
         }
-        // relative to the last event (not the press), so Shift may change at any time
+        // relative to the last event (not the press), so Ctrl (Cmd) may change at any time
         const auto d = e.position - lastDragPos;
         lastDragPos = e.position;
         const auto style = getSliderStyle();
@@ -423,7 +423,7 @@ public:
                           : style == RotaryVerticalDrag   ? (double) -d.y
                                                           : (double) d.x - (double) d.y;
         dragPos = juce::jlimit (0.0, 1.0, dragPos + move / (double) juce::jmax (1, getMouseDragSensitivity())
-                                                        * (e.mods.isShiftDown() ? kFineFactor : 1.0));
+                                                        * (e.mods.isCommandDown() ? kFineFactor : 1.0));
         setValue (snapValue (proportionOfLengthToValue (dragPos), absoluteDrag), juce::sendNotificationSync);
     }
 
