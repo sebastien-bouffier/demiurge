@@ -11,6 +11,7 @@
 // empty, Esc clears the search and then closes, typing searches, F2 renames and Delete deletes a
 // user preset. Drag a user preset onto a user folder to move it there. Right-click a preset or a
 // user folder for the rest (favourite, tags, rename, move, delete, new folder, show the file).
+// A plugin that can audition presets (onPreview) gets a play button after each star.
 
 #include "Presets.h"
 #include "../BidooLook.h"
@@ -34,6 +35,9 @@ public:
     std::function<void()> onPresetsChanged;                  // presets renamed, moved, deleted: new list
     // A preset's key changed (renamed or moved): the editor follows its current preset.
     std::function<void (const juce::String& oldKey, const juce::String& newKey)> onKeyChanged;
+    // Audition (optional): a play button after each star plays the preset at `index` without
+    // loading it. None: no button.
+    std::function<void (int index)> onPreview;
 
     void applyTheme (const bidoo::look::Palette& p);
     // The panel's left edge (under the preset name), in the browser's coordinates.
@@ -94,7 +98,7 @@ private:
         void mouseDoubleClick (const juce::MouseEvent& e) override;
         int rowAt (int y) const;
         int hoverRow = -1;
-        bool hoverStar = false;
+        bool hoverStar = false, hoverPlay = false;
         static constexpr int kRowHeight = 26;
 
     private:
@@ -147,10 +151,13 @@ private:
     void layoutLists();
 
     void paintNodeRow (juce::Graphics& g, int row, juce::Rectangle<int> r, bool hover);
-    void paintPresetRow (juce::Graphics& g, int row, juce::Rectangle<int> r, bool hover, bool starHover);
+    void paintPresetRow (juce::Graphics& g, int row, juce::Rectangle<int> r, bool hover, bool starHover, bool playHover);
     static juce::Path starPath (juce::Rectangle<float> r);
     static juce::Path folderPath (juce::Rectangle<float> r);
     static juce::Rectangle<int> starArea (juce::Rectangle<int> row) { return row.withWidth (28); }
+    // The audition button, right of the star (only with onPreview).
+    static juce::Rectangle<int> playArea (juce::Rectangle<int> row) { return row.withTrimmedLeft (28).withWidth (24); }
+    bool inPlayArea (int x) const { return onPreview != nullptr && playArea ({ 0, 0, presetList.getWidth(), RowList::kRowHeight }).getHorizontalRange().contains (x); }
 
     void presetClicked (int row, const juce::MouseEvent& e);
     // Dragging a user preset onto a user folder at the left moves it there.

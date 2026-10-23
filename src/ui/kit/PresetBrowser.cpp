@@ -34,7 +34,7 @@ void PresetBrowser::RowList::paint (juce::Graphics& g)
     {
         const juce::Rectangle<int> r (0, row * kRowHeight, getWidth(), kRowHeight);
         if (presets)
-            browser.paintPresetRow (g, row, r, row == hoverRow, row == hoverRow && hoverStar);
+            browser.paintPresetRow (g, row, r, row == hoverRow, row == hoverRow && hoverStar, row == hoverRow && hoverPlay);
         else
             browser.paintNodeRow (g, row, r, row == hoverRow);
     }
@@ -44,10 +44,12 @@ void PresetBrowser::RowList::mouseMove (const juce::MouseEvent& e)
 {
     const int row = rowAt (e.y);
     const bool star = presets && row >= 0 && starArea ({ 0, 0, getWidth(), kRowHeight }).contains (e.x, kRowHeight / 2);
-    if (row != hoverRow || star != hoverStar)
+    const bool play = presets && row >= 0 && browser.inPlayArea (e.x);
+    if (row != hoverRow || star != hoverStar || play != hoverPlay)
     {
         hoverRow = row;
         hoverStar = star;
+        hoverPlay = play;
         repaint();
     }
 }
@@ -55,7 +57,7 @@ void PresetBrowser::RowList::mouseMove (const juce::MouseEvent& e)
 void PresetBrowser::RowList::mouseExit (const juce::MouseEvent&)
 {
     hoverRow = -1;
-    hoverStar = false;
+    hoverStar = hoverPlay = false;
     repaint();
 }
 
@@ -84,7 +86,8 @@ void PresetBrowser::RowList::mouseDrag (const juce::MouseEvent& e)
 void PresetBrowser::RowList::mouseDoubleClick (const juce::MouseEvent& e)
 {
     const int row = rowAt (e.y);
-    if (presets && row >= 0 && ! e.mods.isPopupMenu() && ! starArea ({ 0, 0, getWidth(), kRowHeight }).contains (e.x, kRowHeight / 2))
+    if (presets && row >= 0 && ! e.mods.isPopupMenu() && ! starArea ({ 0, 0, getWidth(), kRowHeight }).contains (e.x, kRowHeight / 2)
+        && ! browser.inPlayArea (e.x))
         browser.loadRow (row, true);
 }
 
@@ -648,8 +651,9 @@ void PresetBrowser::paint (juce::Graphics& g)
     // footer: the keys
     g.setColour (p.textDim);
     g.setFont (bidoo::look::font (11.5f));
-    g.drawText (juce::CharPointer_UTF8 ("Click loads, double-click loads and closes  \xc2\xb7  \xe2\x86\x91\xe2\x86\x93 select  \xc2\xb7  "
-                                        "Enter load  \xc2\xb7  \xe2\x86\x90\xe2\x86\x92 folder  \xc2\xb7  drag to a folder to move  \xc2\xb7  right-click for tags"),
+    const juce::String keys (juce::CharPointer_UTF8 ("Click loads, double-click loads and closes  \xc2\xb7  \xe2\x86\x91\xe2\x86\x93 select  \xc2\xb7  "
+                                                     "Enter load  \xc2\xb7  \xe2\x86\x90\xe2\x86\x92 folder  \xc2\xb7  drag to a folder to move  \xc2\xb7  right-click for tags"));
+    g.drawText (onPreview != nullptr ? juce::String (juce::CharPointer_UTF8 ("\xe2\x96\xb6 listens  \xc2\xb7  ")) + keys : keys,
                 footer.withTrimmedRight (160), juce::Justification::centredLeft, true);
 }
 
@@ -734,7 +738,7 @@ void PresetBrowser::paintNodeRow (juce::Graphics& g, int row, juce::Rectangle<in
     g.drawText (n.label, area, juce::Justification::centredLeft, true);
 }
 
-void PresetBrowser::paintPresetRow (juce::Graphics& g, int row, juce::Rectangle<int> r, bool hover, bool starHover)
+void PresetBrowser::paintPresetRow (juce::Graphics& g, int row, juce::Rectangle<int> r, bool hover, bool starHover, bool playHover)
 {
     const auto& p = *palette;
     const int entry = rows[(size_t) row];
@@ -766,7 +770,18 @@ void PresetBrowser::paintPresetRow (juce::Graphics& g, int row, juce::Rectangle<
         g.setColour (starHover ? p.accent : p.textDim.withAlpha (hover || selected ? 0.8f : 0.4f));
         g.strokePath (sp, juce::PathStrokeType (1.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
-    area.removeFromLeft (starArea (area).getWidth() + 6);
+    if (onPreview != nullptr)
+    {
+        // the audition button: a small play triangle
+        const auto box = playArea (area).toFloat().withSizeKeepingCentre (10.0f, 11.0f).translated (2.0f, 0.0f);
+        juce::Path tri;
+        tri.addTriangle (box.getX(), box.getY(), box.getRight(), box.getCentreY(), box.getX(), box.getBottom());
+        g.setColour (playHover ? p.accent : p.textDim.withAlpha (hover || selected ? 0.8f : 0.4f));
+        g.fillPath (tri);
+        area.removeFromLeft (playArea (area).getRight() - area.getX());
+    }
+    else
+        area.removeFromLeft (starArea (area).getWidth() + 6);
 
     g.setFont (bidoo::look::font (11.5f));
     g.setColour (p.textDim);
@@ -820,6 +835,12 @@ void PresetBrowser::presetClicked (int row, const juce::MouseEvent& e)
     if (starArea ({ 0, row * RowList::kRowHeight, presetList.getWidth(), RowList::kRowHeight }).contains (local.x, row * RowList::kRowHeight + 1))
     {
         toggleFavourite (entry);
+        return;
+    }
+    if (inPlayArea (local.x))
+    {
+        selectRow (row, false);
+        onPreview (entry);
         return;
     }
     if (e.getNumberOfClicks() > 1)
